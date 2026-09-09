@@ -2,7 +2,7 @@ import subprocess
 import json
 import time
 
-MAX_TURNS = 10
+MAX_TURNS = 4
 
 
 def get_current_agent():

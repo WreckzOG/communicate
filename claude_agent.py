@@ -47,8 +47,13 @@ def ask_claude(packet):
         ]
     )
 
-    return message.content[0].text
+    text_parts = []
 
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            text_parts.append(block.text)
+
+    return "\n".join(text_parts)
 
 packet = receive()
 

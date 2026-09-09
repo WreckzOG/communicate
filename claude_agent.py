@@ -167,6 +167,10 @@ print(packet)
 
 response = ask_claude(packet)
 
+if response is None:
+    print("[Communicate] Claude turn aborted due to timeout.")
+    raise SystemExit(1)
+
 print("\n[Claude]")
 print(response)
 

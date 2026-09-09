@@ -73,7 +73,7 @@ def receive():
     )
 
     return result.stdout.strip()
-
+from anthropic import Anthropic, APITimeoutError
 
 def ask_claude(packet):
     workspace = snapshot()
@@ -96,17 +96,22 @@ Remember:
 
     print("[Claude] Sending request...", flush=True)
 
-    message = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=16000,
-        system=SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-5",
+            max_tokens=16000,
+            system=SYSTEM,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        )
+
+    except APITimeoutError:
+        print("[Claude ERROR] API request timed out.", flush=True)
+        return None
 
     print("[Claude] Response received.", flush=True)
 

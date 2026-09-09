@@ -68,3 +68,33 @@ response = ask_claude(packet)
 
 print("\n[Claude]")
 print(response)
+
+# Route Claude's final packet back through Communicate
+if response.startswith("C0|"):
+    parts = response.split("|")
+
+    fields = {}
+
+    for part in parts[1:]:
+        if ":" in part:
+            key, value = part.split(":", 1)
+            fields[key] = value
+
+    sender = fields.get("F")
+    receiver = fields.get("T")
+    phase = fields.get("P")
+    state_text = fields.get("S")
+    action = fields.get("A")
+
+    subprocess.run([
+        "python",
+        "communicate.py",
+        "send",
+        sender,
+        receiver,
+        phase,
+        state_text,
+        action
+    ])
+
+    print("\n[Communicate] Claude handoff routed to GPT.")

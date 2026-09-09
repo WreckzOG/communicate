@@ -7,7 +7,7 @@ from workspace_tools import snapshot, apply_writes, extract_packet
 
 client = Anthropic(
     api_key=os.environ["ANTHROPIC_API_KEY"],
-    timeout=90.0,
+    timeout=300.0,
     max_retries=0
 )
 

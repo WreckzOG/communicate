@@ -1,30 +1,87 @@
 from pathlib import Path
 
-ROOT = Path("workspace/coffee-site")
+ROOT = Path("workspace/coffee-site").resolve()
 ROOT.mkdir(parents=True, exist_ok=True)
 
 
-def list_files():
+def safe_path(filename):
+    path = (ROOT / filename).resolve()
+
+    if ROOT not in path.parents and path != ROOT:
+        raise ValueError("Path outside workspace")
+
+    return path
+
+
+def snapshot():
     files = []
+
     for path in ROOT.rglob("*"):
         if path.is_file():
-            files.append(str(path.relative_to(ROOT)))
-    return files
+            files.append(path)
+
+    if not files:
+        return "[WORKSPACE EMPTY]"
+
+    output = []
+
+    for path in files:
+        relative = path.relative_to(ROOT)
+
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception:
+            content = "[BINARY/UNREADABLE FILE]"
+
+        output.append(
+            f"\n--- FILE: {relative} ---\n"
+            f"{content}\n"
+            f"--- END FILE ---"
+        )
+
+    return "\n".join(output)
 
 
-def read_file(filename):
-    path = ROOT / filename
+def apply_writes(response):
+    lines = response.splitlines()
 
-    if not path.exists():
-        return f"FILE_NOT_FOUND:{filename}"
+    writing = False
+    filename = None
+    buffer = []
+    written = []
 
-    return path.read_text(encoding="utf-8")
+    for line in lines:
+
+        if line.startswith("WRITE:") and not writing:
+            filename = line[len("WRITE:"):].strip()
+            buffer = []
+            writing = True
+            continue
+
+        if line.strip() == "ENDWRITE" and writing:
+            path = safe_path(filename)
+
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("\n".join(buffer), encoding="utf-8")
+
+            written.append(filename)
+
+            writing = False
+            filename = None
+            buffer = []
+            continue
+
+        if writing:
+            buffer.append(line)
+
+    return written
 
 
-def write_file(filename, content):
-    path = ROOT / filename
-    path.parent.mkdir(parents=True, exist_ok=True)
+def extract_packet(response):
+    for line in reversed(response.splitlines()):
+        line = line.strip()
 
-    path.write_text(content, encoding="utf-8")
+        if line.startswith("C0|"):
+            return line
 
-    return f"WROTE:{filename}"
+    return None

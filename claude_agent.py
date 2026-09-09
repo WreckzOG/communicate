@@ -38,10 +38,13 @@ You may write multiple files during one turn.
 
 IMPORTANT:
 - Inspect the existing workspace before making changes.
-- Do not erase good work unnecessarily.
-- Actually perform the requested task through WRITE blocks.
-- Do not merely describe what should be changed.
-- Keep the project functional.
+- Preserve existing good work.
+- Make the SMALLEST change necessary to complete your task.
+- Do NOT rewrite a file unless that file actually needs modification.
+- Do NOT reproduce unchanged files.
+- Avoid unnecessary prose.
+- Keep output compact so all WRITE blocks can finish.
+- Every WRITE block MUST end with ENDWRITE.
 - You and GPT share the exact same files.
 
 When your turn is complete:

@@ -4,7 +4,11 @@ import subprocess
 from openai import OpenAI
 from workspace_tools import snapshot, apply_writes, extract_packet
 
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+client = OpenAI(
+    api_key=os.environ["OPENAI_API_KEY"],
+    timeout=60.0,
+    max_retries=0
+)
 
 
 SYSTEM = """
@@ -79,11 +83,19 @@ CURRENT SHARED WORKSPACE:
 Perform your turn now.
 """
 
-    response = client.responses.create(
-        model="gpt-5.6-sol",
-        instructions=SYSTEM,
-        input=prompt
-    )
+    print("[GPT] Sending request to OpenAI...", flush=True)
+
+    try:
+        response = client.responses.create(
+            model="gpt-5.6-sol",
+            instructions=SYSTEM,
+            input=prompt
+        )
+    except Exception as e:
+        print(f"[GPT ERROR] {type(e).__name__}: {e}", flush=True)
+        raise
+
+    print("[GPT] Response received.", flush=True)
 
     return response.output_text.strip()
 

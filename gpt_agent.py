@@ -1,28 +1,56 @@
 import os
 import subprocess
+
 from openai import OpenAI
+from workspace_tools import snapshot, apply_writes, extract_packet
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
+
 SYSTEM = """
-You are the GPT side of Communicate v0.0.1.
+You are the GPT coding agent inside Communicate.
 
-You receive compact packets from another AI agent.
+You collaborate with Claude on a shared project.
 
-Packet format:
-C0|F:<from>|T:<to>|I:<id>|P:<phase>|S:<state>|A:<action>
+You receive:
 
-Your job:
-1. Decode the incoming packet.
-2. Perform or reason about the requested action.
-3. When your turn is complete, produce exactly ONE handoff packet.
-4. Address the handoff to Claude.
-5. Do not generate a message ID. Communicate owns message IDs.
-6. Stop immediately after producing the packet.
+1. A Communicate packet from Claude
+2. A snapshot of the shared project workspace
 
-Final output format:
+You may modify files ONLY by outputting WRITE blocks.
 
-C0|F:gpt|T:claude|P:E|S:<updated state>|A:<next action>
+Format:
+
+WRITE:index.html
+<complete contents>
+ENDWRITE
+
+WRITE:style.css
+<complete contents>
+ENDWRITE
+
+You may write multiple files during one turn.
+
+IMPORTANT:
+- Inspect the existing workspace before making changes.
+- Do not erase good work unnecessarily.
+- Actually perform the requested task through WRITE blocks.
+- Do not merely describe what should be changed.
+- Keep the project functional.
+- You and Claude share the exact same files.
+
+When your turn is finished, output exactly ONE Communicate packet as
+the final line.
+
+Format:
+
+C0|F:gpt|T:claude|P:E|S:<compact description of project state>|A:<what Claude should do next>
+
+If the entire project is genuinely finished:
+
+C0|F:gpt|T:claude|P:X|S:<final state>|A:stop
+
+Communicate owns message IDs. Do not generate I fields.
 """
 
 
@@ -37,30 +65,30 @@ def receive():
 
 
 def ask_gpt(packet):
+    workspace = snapshot()
+
+    prompt = f"""
+INCOMING COMMUNICATE PACKET:
+
+{packet}
+
+CURRENT SHARED WORKSPACE:
+
+{workspace}
+
+Perform your turn now.
+"""
+
     response = client.responses.create(
         model="gpt-5.6-sol",
         instructions=SYSTEM,
-        input=packet
+        input=prompt
     )
 
     return response.output_text.strip()
 
 
-def route_response(response):
-    # Find the Communicate packet in case the model adds whitespace.
-    packet = None
-
-    for line in response.splitlines():
-        line = line.strip()
-
-        if line.startswith("C0|"):
-            packet = line
-            break
-
-    if packet is None:
-        print("[ERROR] GPT did not return a valid C0 packet.")
-        return
-
+def route(packet):
     parts = packet.split("|")
     fields = {}
 
@@ -69,28 +97,16 @@ def route_response(response):
             key, value = part.split(":", 1)
             fields[key] = value
 
-    sender = fields.get("F")
-    receiver = fields.get("T")
-    phase = fields.get("P")
-    state_text = fields.get("S")
-    action = fields.get("A")
-
-    if not all([sender, receiver, phase, state_text, action]):
-        print("[ERROR] GPT packet is missing required fields.")
-        return
-
     subprocess.run([
         "python",
         "communicate.py",
         "send",
-        sender,
-        receiver,
-        phase,
-        state_text,
-        action
+        fields["F"],
+        fields["T"],
+        fields["P"],
+        fields["S"],
+        fields["A"]
     ])
-
-    print("\n[Communicate] GPT handoff routed to Claude.")
 
 
 packet = receive()
@@ -107,4 +123,17 @@ response = ask_gpt(packet)
 print("\n[GPT]")
 print(response)
 
-route_response(response)
+written = apply_writes(response)
+
+for filename in written:
+    print(f"[Workspace] GPT wrote {filename}")
+
+handoff = extract_packet(response)
+
+if not handoff:
+    print("[ERROR] GPT did not return a Communicate packet.")
+    raise SystemExit(1)
+
+route(handoff)
+
+print("\n[Communicate] GPT handoff routed to Claude.")

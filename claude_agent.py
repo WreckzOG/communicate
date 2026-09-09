@@ -4,7 +4,12 @@ import subprocess
 from anthropic import Anthropic
 from workspace_tools import snapshot, apply_writes, extract_packet
 
-client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+client = Anthropic(
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    timeout=90.0,
+    max_retries=0
+)
 
 
 SYSTEM = """
@@ -39,18 +44,21 @@ IMPORTANT:
 - Keep the project functional.
 - You and GPT share the exact same files.
 
-When your turn is finished, output exactly ONE Communicate packet as
-the final line.
+When your turn is complete:
 
-Format:
+1. Finish every WRITE block with ENDWRITE.
+2. Output exactly ONE Communicate packet.
+3. The packet MUST be the final line of your response.
+4. Do not write anything after the packet.
+5. Do not generate a message ID. Communicate owns message IDs.
+
+Normal handoff format:
 
 C0|F:claude|T:gpt|P:E|S:<compact description of project state>|A:<what GPT should do next>
 
-If the entire project is genuinely finished:
+If the entire project is genuinely complete:
 
 C0|F:claude|T:gpt|P:X|S:<final state>|A:stop
-
-Communicate owns message IDs. Do not generate I fields.
 """
 
 
@@ -77,7 +85,13 @@ CURRENT SHARED WORKSPACE:
 {workspace}
 
 Perform your turn now.
+
+Remember:
+- Finish all WRITE blocks.
+- Your FINAL LINE must be exactly one C0 Communicate packet.
 """
+
+    print("[Claude] Sending request...", flush=True)
 
     message = client.messages.create(
         model="claude-sonnet-5",
@@ -90,6 +104,8 @@ Perform your turn now.
             }
         ]
     )
+
+    print("[Claude] Response received.", flush=True)
 
     text_parts = []
 
@@ -109,6 +125,15 @@ def route(packet):
             key, value = part.split(":", 1)
             fields[key] = value
 
+    required = ["F", "T", "P", "S", "A"]
+
+    missing = [key for key in required if not fields.get(key)]
+
+    if missing:
+        raise ValueError(
+            f"Communicate packet missing required fields: {missing}"
+        )
+
     subprocess.run([
         "python",
         "communicate.py",
@@ -127,24 +152,50 @@ if packet == "NO_PACKET":
     print("[Claude] No packet waiting.")
     raise SystemExit
 
+
 print("[Communicate -> Claude]")
 print(packet)
+
 
 response = ask_claude(packet)
 
 print("\n[Claude]")
 print(response)
 
+
 written = apply_writes(response)
 
 for filename in written:
     print(f"[Workspace] Claude wrote {filename}")
 
+
 handoff = extract_packet(response)
 
+
+# Reliability fallback:
+# If Claude successfully did work but forgot the final C0 packet,
+# do not kill the entire Communicate session.
 if not handoff:
-    print("[ERROR] Claude did not return a Communicate packet.")
-    raise SystemExit(1)
+    print(
+        "[WARN] Claude omitted the Communicate handoff packet. "
+        "Generating fallback."
+    )
+
+    if written:
+        state_summary = "updated:" + ",".join(written)
+    else:
+        state_summary = "turn_completed_no_file_changes"
+
+    handoff = (
+        "C0|F:claude|T:gpt|P:E|"
+        f"S:{state_summary}|"
+        "A:review_claude_changes_and_continue"
+    )
+
+
+print("\n[Claude -> Communicate]")
+print(handoff)
+
 
 route(handoff)
 
